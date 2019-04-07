@@ -312,7 +312,6 @@ func runQuery(
 			dialOpts,
 		)
 		proxy            = store.NewProxyStore(logger, stores.Get, component.Query, selectorLset, storeResponseTimeout)
-		queryableCreator = query.NewQueryableCreator(logger, proxy, replicaLabel)
 		engine           = promql.NewEngine(
 			promql.EngineOpts{
 				Logger:        logger,
@@ -418,7 +417,21 @@ func runQuery(
 
 		ui.NewQueryUI(logger, stores, flagsMap).Register(router.WithPrefix(webRoutePrefix))
 
-		api := v1.NewAPI(logger, reg, engine, queryableCreator, enableAutodownsampling, enablePartialResponse)
+		partialResponseStrategy := storepb.PartialResponseStrategy_ABORT
+		if enablePartialResponse {
+			partialResponseStrategy = storepb.PartialResponseStrategy_WARN
+		}
+		api := v1.NewAPI(
+			logger,
+			reg,
+			query.NewAPI(replicaLabel, proxy),
+			proxy,
+			query.Options{
+				Deduplicate:             true,
+				PartialResponseStrategy: partialResponseStrategy,
+			},
+			enableAutodownsampling,
+		)
 
 		api.Register(router.WithPrefix(path.Join(webRoutePrefix, "/api/v1")), tracer, logger)
 
